@@ -635,12 +635,13 @@ func createDocumentTokens(tokens []*Token) ([]*Token, error) {
 				}), nil
 			}
 			if tokens[i+1].Type() == token.DocumentHeaderType {
-				return append(ret, &Token{
+				ret = append(ret, &Token{
 					Group: &TokenGroup{
 						Type:   TokenGroupDocument,
 						Tokens: []*Token{tk},
 					},
-				}), nil
+				})
+				continue
 			}
 			if tokens[i].Line() == tokens[i+1].Line() {
 				switch tokens[i+1].GroupType() {
