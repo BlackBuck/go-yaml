@@ -639,11 +639,14 @@ func createDocumentTokens(tokens []*Token) ([]*Token, error) {
 			// if current token is last token, add DocumentHeader only tokens to ret.
 			if j >= len(tokens) {
 				return append(ret, &Token{
+			if tokens[i+1].Type() == token.DocumentHeaderType {
+				ret = append(ret, &Token{
 					Group: &TokenGroup{
 						Type:   TokenGroupDocument,
 						Tokens: []*Token{tk},
 					},
-				}), nil
+				})
+				continue
 			}
 			tks, err := createDocumentTokens(tokens[j:])
 			if err != nil {
