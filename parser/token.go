@@ -616,17 +616,28 @@ func createDirectiveTokenGroups(tokens []*Token) ([]*Token, error) {
 
 func createDocumentTokens(tokens []*Token) ([]*Token, error) {
 	var ret []*Token
-	for i := 0; i < len(tokens); i++ {
+	for i := 0; i < len(tokens); {
 		tk := tokens[i]
-		switch tk.Type() {
-		case token.DocumentHeaderType:
+		if tk.Type() == token.DocumentHeaderType {
 			if i != 0 {
 				ret = append(ret, &Token{
 					Group: &TokenGroup{Tokens: tokens[:i]},
 				})
 			}
-			if i+1 == len(tokens) {
-				// if current token is last token, add DocumentHeader only tokens to ret.
+			// Check for empty document
+			j := i + 1
+			for j < len(tokens) && tokens[j].Type() == token.DocumentHeaderType {
+				// Consecutive ---
+				ret = append(ret, &Token{
+					Group: &TokenGroup{
+						Type:   TokenGroupDocument,
+						Tokens: []*Token{tokens[j]},
+					},
+				})
+				j++
+			}
+			// if current token is last token, add DocumentHeader only tokens to ret.
+			if j >= len(tokens) {
 				return append(ret, &Token{
 					Group: &TokenGroup{
 						Type:   TokenGroupDocument,
@@ -634,41 +645,27 @@ func createDocumentTokens(tokens []*Token) ([]*Token, error) {
 					},
 				}), nil
 			}
-			if tokens[i+1].Type() == token.DocumentHeaderType {
-				ret = append(ret, &Token{
-					Group: &TokenGroup{
-						Type:   TokenGroupDocument,
-						Tokens: []*Token{tk},
-					},
-				})
-				continue
-			}
-			if tokens[i].Line() == tokens[i+1].Line() {
-				switch tokens[i+1].GroupType() {
-				case TokenGroupMapKey, TokenGroupMapKeyValue:
-					return nil, errors.ErrSyntax("value cannot be placed after document separator", tokens[i+1].RawToken())
-				}
-				switch tokens[i+1].Type() {
-				case token.SequenceEntryType:
-					return nil, errors.ErrSyntax("value cannot be placed after document separator", tokens[i+1].RawToken())
-				}
-			}
-			tks, err := createDocumentTokens(tokens[i+1:])
+			tks, err := createDocumentTokens(tokens[j:])
 			if err != nil {
 				return nil, err
 			}
 			if len(tks) != 0 {
-				tks[0].SetGroupType(TokenGroupDocument)
-				tks[0].Group.Tokens = append([]*Token{tk}, tks[0].Group.Tokens...)
-				return append(ret, tks...), nil
+				// Only prepend tk if it's not already part of tks[0]
+				if tks[0].Group.Tokens[0] != tk {
+					tks[0].SetGroupType(TokenGroupDocument)
+					tks[0].Group.Tokens = append([]*Token{tk}, tks[0].Group.Tokens...)
+				}
+				ret = append(ret, tks...)
+				break
 			}
-			return append(ret, &Token{
+			ret = append(ret, &Token{
 				Group: &TokenGroup{
 					Type:   TokenGroupDocument,
 					Tokens: []*Token{tk},
 				},
-			}), nil
-		case token.DocumentEndType:
+			})
+			i++
+		} else if tk.Type() == token.DocumentEndType {
 			if i != 0 {
 				ret = append(ret, &Token{
 					Group: &TokenGroup{
@@ -677,27 +674,31 @@ func createDocumentTokens(tokens []*Token) ([]*Token, error) {
 					},
 				})
 			}
-			if i+1 == len(tokens) {
+			ret = append(ret, &Token{
+				Group: &TokenGroup{
+					Type:   TokenGroupDocument,
+					Tokens: tokens[0 : i+1],
+				},
+			})
+			if i+1 >= len(tokens) {
 				return ret, nil
 			}
 			if isScalarType(tokens[i+1]) {
 				return nil, errors.ErrSyntax("unexpected end content", tokens[i+1].RawToken())
 			}
-
 			tks, err := createDocumentTokens(tokens[i+1:])
 			if err != nil {
 				return nil, err
 			}
-			return append(ret, tks...), nil
+			ret = append(ret, tks...)
+			break
+		} else {
+			i++
 		}
 	}
-	return append(ret, &Token{
-		Group: &TokenGroup{
-			Type:   TokenGroupDocument,
-			Tokens: tokens,
-		},
-	}), nil
+	return ret, nil
 }
+
 
 func isScalarType(tk *Token) bool {
 	switch tk.GroupType() {
